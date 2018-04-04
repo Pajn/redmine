@@ -1,0 +1,46 @@
+{
+  "name": "redmine-command",
+  "version": "0.1.0",
+  "bin": {
+    "redmine": "./build/index.js"
+  },
+  "dependencies": {
+    "@types/execa": "^0.8.1",
+    "@types/inquirer": "^0.0.36",
+    "@types/node": "^9.4.6",
+    "@types/node-fetch": "^1.6.7",
+    "@types/ramda": "^0.25.20",
+    "@types/tmp": "^0.0.33",
+    "babel-runtime": "^6.26.0",
+    "chalk": "^2.3.1",
+    "debug": "^3.1.0",
+    "execa": "^0.9.0",
+    "inquirer": "^5.1.0",
+    "iterates": "^0.3.5",
+    "js-yaml": "^3.10.0",
+    "make-promises-safe": "^1.1.0",
+    "node-fetch": "^2.0.0",
+    "open": "^0.0.5",
+    "open-in-editor": "^2.2.0",
+    "ramda": "^0.25.0",
+    "safe-commander": "^2.11.1",
+    "ssl-root-cas": "^1.2.5",
+    "syswide-cas": "^5.0.0",
+    "tmp": "^0.0.33"
+  },
+  "devDependencies": {
+    "@types/jest": "^22.1.3",
+    "prettier": "^1.11.0",
+    "tscomp": "0.15.0"
+  },
+  "tscomp": {
+    "mode": "server"
+  },
+  "scripts": {
+    "build": "tscomp build && chmod +x build/index.js",
+    "test": "tscomp test",
+    "eject": "tscomp eject",
+    "start": "tscomp start",
+    "watch": "tscomp watch"
+  }
+}
