@@ -335,128 +335,19 @@ function main() {
     .option('--me', 'Filter to issues assigned to me')
     .option('-o, --sort <sort>', 'Sort', 'status')
     .option('-g, --group', 'group')
-    .action(
-      async ({
-        parent: {optsObj: appOptions},
-        parentIssue,
-        status: statusesJoined,
-        release: releasesJoined,
-        user,
-        me,
-        sort,
-        group,
-        optsObj,
-      }) => {
-        // .action((a) => {
-        //   console.log('a', a)
-        //   const {parent: {safeOpts: appOptions}, safeOpts: {description, parent, status, user, me}} = a
-        debug('optsObj', optsObj)
-        const url = projectUrl(config, appOptions)
-        if (me !== undefined) {
-          user = whois(config)
-        }
-        user = expandMe(config, user)
-
-        const allIssues = await fetchAll<Issue>(`${url}/issues.json`, 'issues')
-
-        const issues = allIssues.filter(
-          i =>
-            compare(parentIssue, i.parent) &&
-            compare(statusesJoined, i.status) &&
-            compare(releasesJoined, i.fixed_version) &&
-            compare(user, i.assigned_to),
-        )
-
-        if (sort !== undefined) {
-          if (sort === 'status') {
-            issues.sort(
-              (a, b) =>
-                a.status.id - b.status.id || b.priority.id - a.priority.id,
-            )
-          } else if (sort === 'id') {
-            issues.sort((a, b) => a.id - b.id)
-          }
-        }
-
-        if (group) {
-          const issuesById = collect(issue => [issue.id, issue], allIssues)
-          const groups = pipeValue(
-            issues,
-            filter(issue => !!issue.parent),
-            collect(issue => [issue.parent!.id, [issue]], {
-              merge: (a, b) => [...a, ...b],
-            }),
-          )
-          for (const [parentId, issues] of groups) {
-            const parent = issuesById.get(parentId)!
-            console.log()
-            console.log(parent.subject)
-            for (const issue of issues) {
-              const status = issue.status.name.padEnd(12, ' ')
-              const id = issue.id
-              const title = issue.subject
-              let row = `  ${status} #${id} ${title}`
-              if (issue.priority.id <= 3) {
-                row = chalk.dim(row)
-              }
-              console.log(row)
-            }
-          }
-        } else {
-          issues.forEach(issue => {
-            const status = issue.status.name.padEnd(12, ' ')
-            const id = issue.id
-            const title = issue.subject
-            let row = `${status} #${id} ${title}`
-            if (issue.priority.id <= 3) {
-              row = chalk.dim(row)
-            }
-            console.log(row)
-          })
-        }
-      },
-    )
+    .action(listCommand)
 
   program
     .command('show <issue>')
     .alias('s')
     .description('Display details of an issue')
-    .action(async (issueId, {parent: {optsObj: appOptions}}) => {
-      const surl = serverUrl(config, appOptions)
-      issueId = +issueId
-      if (isNaN(issueId)) {
-        console.error(`Invalid issue ${issueId}`)
-        process.exit(1)
-      }
-      const {issue} = await get<{issue: Issue}>(
-        `${surl}/issues/${issueId}.json`,
-      )
-
-      console.log(`${issue.tracker.name} #${issue.id}`)
-      console.log(`${issue.subject}`)
-      console.log()
-      console.log(`Status: ${issue.status.name}`)
-      console.log(`Priority: ${issue.priority.name}`)
-      console.log(
-        `Assignee: ${issue.assigned_to ? issue.assigned_to.name : '-'}`,
-      )
-      console.log()
-      console.log(`${issue.description}`)
-    })
+    .action(showCommand)
 
   program
     .command('open <issue>')
     .alias('o')
     .description('Open issue in a browser')
-    .action(async (issueId, {parent: {optsObj: appOptions}}) => {
-      const surl = webUrl(config, appOptions)
-      issueId = +issueId
-      if (isNaN(issueId)) {
-        console.error(`Invalid issue ${issueId}`)
-        process.exit(1)
-      }
-      open(`${surl}/issues/${issueId}`)
-    })
+    .action(openCommand)
 
   program
     .command('new <title>')
@@ -480,90 +371,7 @@ function main() {
     .option('-r, --release <release>', 'Set the target release')
     .option('-u, --user <user>', 'Assign to the specified user')
     .option('--me', 'Assign to me')
-    .action(
-      async (
-        title,
-        {
-          parent: {optsObj: appOptions},
-          description,
-          idescription = description,
-          parentIssue,
-          tracker: trackerName,
-          status: statusName,
-          release: releaseName,
-          user: userName,
-          me,
-        },
-      ) => {
-        description = idescription
-        // .action((title, {parent: {safeOpts: appOptions}, safeOpts: {description, parent, status, user, me}}) => {
-        if (typeof description !== 'string') description = undefined
-        const surl = serverUrl(config, appOptions)
-        const url = projectUrl(config, appOptions)
-        if (me !== undefined) {
-          userName = whois(config)
-        }
-        userName = expandMe(config, userName)
-
-        const project = await get(`${url}.json`)
-        const tracker = await getTracker(surl, trackerName)
-        const status = await getStatus(surl, statusName)
-
-        if (description === true) {
-          description = await openInEditor(
-            config,
-            'Enter the issue description',
-            '',
-          )
-        }
-
-        if (
-          parentIssue === true ||
-          (parentIssue === undefined && config.requireParent)
-        ) {
-          parentIssue = await selectParentIssue(url)
-        }
-
-        const body: IssueBody = {
-          project_id: project.project.id,
-          tracker_id: tracker.id,
-          status_id: status.id,
-          subject: title,
-          description,
-          parent_issue_id: parentIssue,
-        }
-
-        if (releaseName !== undefined) {
-          const release = await getRelease(url, releaseName)
-          body.fixed_version_id = release.id
-        }
-
-        if (userName !== undefined) {
-          const user = await getUser(url, userName)
-          body.assigned_to_id = user.id
-        }
-
-        debug('new body', body)
-
-        const response = await fetch(`${url}/issues.json`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({issue: body}),
-        })
-
-        if (response.status === 201) {
-          const body = await response.json()
-          const id = body.issue.id
-          const url = `${webUrl(config, appOptions)}/issues/${id}`
-          console.log(`Created issue #${id} ${url}`)
-        } else {
-          debug('response status', response.status)
-          debug('response text', await response.text())
-        }
-      },
-    )
+    .action(newCommand)
 
   program
     .command('take <issue> [user]')
@@ -571,40 +379,8 @@ function main() {
     .description('assign yourself or someone else to an issue')
     .option('-s, --status <status>', 'Set the status', 'In Progress')
     .option('--skip-status', "Don't set the status")
-    .action(
-      async (
-        issue,
-        userName = 'me',
-        {parent: {optsObj: appOptions}, status: statusName, skipStatus},
-      ) => {
-        const surl = serverUrl(config, appOptions)
-        const url = projectUrl(config, appOptions)
-        userName = expandMe(config, userName)
-
-        const user = await getUser(url, userName)
-
-        const body: Partial<IssueBody> = {assigned_to_id: user.id}
-
-        if (!skipStatus) {
-          const status = await getStatus(surl, statusName)
-          body.status_id = status.id
-        }
-
-        debug('body', body)
-        debug('put', `${surl}/issues/${issue}.json`)
-
-        const response = await fetch(`${surl}/issues/${issue}.json`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({issue: body}),
-        })
-
-        debug('response status', response.status)
-        debug('response text', await response.text())
-      },
-    )
+    .option('--show', 'Show the issue after taking it')
+    .action(takeCommand)
 
   program
     .command('finish <issue>')
@@ -613,42 +389,7 @@ function main() {
     .option('-s, --status <status>', 'Status to set', 'Resolved')
     .option('-u, --user <user>', 'Assign to the specified user')
     .option('--me', 'Assign to me')
-    .action(
-      async (
-        issue,
-        {parent: {optsObj: appOptions}, status: statusName, user: userName, me},
-      ) => {
-        const surl = serverUrl(config, appOptions)
-        const url = projectUrl(config, appOptions)
-        if (me !== undefined) {
-          userName = whois(config)
-        }
-        userName = expandMe(config, userName)
-
-        const status = await getStatus(surl, statusName)
-
-        const body: Partial<IssueBody> = {status_id: status.id}
-
-        if (userName !== undefined) {
-          const user = await getUser(url, userName)
-          body.assigned_to_id = user.id
-        }
-
-        debug('body', body)
-        debug('put', `${surl}/issues/${issue}.json`)
-
-        const response = await fetch(`${surl}/issues/${issue}.json`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({issue: body}),
-        })
-
-        debug('response status', response.status)
-        debug('response text', await response.text())
-      },
-    )
+    .action(finishCommand)
 
   program
     .command('edit <issue>')
@@ -673,92 +414,367 @@ function main() {
     .option('-r, --release <release>', 'Set the target release')
     .option('-u, --user <user>', 'Assign to the specified user')
     .option('--me', 'Assign to me')
-    .action(
-      async (
-        issue,
-        {
-          parent: {optsObj: appOptions},
-          title,
-          description,
-          idescription = description,
-          parentIssue,
-          tracker: trackerName,
-          status: statusName,
-          release: releaseName,
-          user: userName,
-          me,
-        },
-      ) => {
-        description = idescription
-        if (typeof description === 'function') description = undefined
-        const surl = serverUrl(config, appOptions)
-        const url = projectUrl(config, appOptions)
-        if (me !== undefined) {
-          userName = whois(config)
-        }
-        userName = expandMe(config, userName)
+    .action(editCommand)
 
-        if (description === true) {
-          const {issue: oldIssue} = await get<{issue: Issue}>(
-            `${surl}/issues/${issue}.json`,
-          )
-          description = await openInEditor(
-            config,
-            'Enter the issue description',
-            `; ${oldIssue.tracker.name} #${oldIssue.id}
+  program.parse(process.argv)
+
+  async function listCommand({
+    parent: {optsObj: appOptions},
+    parentIssue,
+    status: statusesJoined,
+    release: releasesJoined,
+    user,
+    me,
+    sort,
+    group,
+    optsObj,
+  }) {
+    // .action((a) => {
+    //   console.log('a', a)
+    //   const {parent: {safeOpts: appOptions}, safeOpts: {description, parent, status, user, me}} = a
+    debug('optsObj', optsObj)
+    const url = projectUrl(config, appOptions)
+    if (me !== undefined) {
+      user = whois(config)
+    }
+    user = expandMe(config, user)
+
+    const allIssues = await fetchAll<Issue>(`${url}/issues.json`, 'issues')
+
+    const issues = allIssues.filter(
+      i =>
+        compare(parentIssue, i.parent) &&
+        compare(statusesJoined, i.status) &&
+        compare(releasesJoined, i.fixed_version) &&
+        compare(user, i.assigned_to),
+    )
+
+    if (sort !== undefined) {
+      if (sort === 'status') {
+        issues.sort(
+          (a, b) => a.status.id - b.status.id || b.priority.id - a.priority.id,
+        )
+      } else if (sort === 'id') {
+        issues.sort((a, b) => a.id - b.id)
+      }
+    }
+
+    if (group) {
+      const issuesById = collect(issue => [issue.id, issue], allIssues)
+      const groups = pipeValue(
+        issues,
+        filter(issue => !!issue.parent),
+        collect(issue => [issue.parent!.id, [issue]], {
+          merge: (a, b) => [...a, ...b],
+        }),
+      )
+      for (const [parentId, issues] of groups) {
+        const parent = issuesById.get(parentId)!
+        console.log()
+        console.log(parent.subject)
+        for (const issue of issues) {
+          const status = issue.status.name.padEnd(12, ' ')
+          const id = issue.id
+          const title = issue.subject
+          let row = `  ${status} #${id} ${title}`
+          if (issue.priority.id <= 3) {
+            row = chalk.dim(row)
+          }
+          if (issue.priority.id == 5) {
+            row = chalk.yellow(row)
+          }
+          if (issue.priority.id >= 6) {
+            row = chalk.red(row)
+          }
+          console.log(row)
+        }
+      }
+    } else {
+      issues.forEach(issue => {
+        const status = issue.status.name.padEnd(12, ' ')
+        const id = issue.id
+        const title = issue.subject
+        let row = `${status} #${id} ${title}`
+        if (issue.priority.id <= 3) {
+          row = chalk.dim(row)
+        }
+        if (issue.priority.id == 5) {
+          row = chalk.yellow(row)
+        }
+        if (issue.priority.id >= 6) {
+          row = chalk.red(row)
+        }
+        console.log(row)
+      })
+    }
+  }
+
+  async function openCommand(issueId, {parent: {optsObj: appOptions}}) {
+    const surl = webUrl(config, appOptions)
+    issueId = +issueId
+    if (isNaN(issueId)) {
+      console.error(`Invalid issue ${issueId}`)
+      process.exit(1)
+    }
+    open(`${surl}/issues/${issueId}`)
+  }
+
+  async function showCommand(issueId, {parent: {optsObj: appOptions}}) {
+    const surl = serverUrl(config, appOptions)
+    issueId = +issueId
+    if (isNaN(issueId)) {
+      console.error(`Invalid issue ${issueId}`)
+      process.exit(1)
+    }
+    const {issue} = await get<{issue: Issue}>(`${surl}/issues/${issueId}.json`)
+
+    console.log(`${issue.tracker.name} #${issue.id}`)
+    console.log(`${issue.subject}`)
+    console.log()
+    console.log(`Status: ${issue.status.name}`)
+    console.log(`Priority: ${issue.priority.name}`)
+    console.log(`Assignee: ${issue.assigned_to ? issue.assigned_to.name : '-'}`)
+    console.log()
+    console.log(`${issue.description}`)
+  }
+
+  async function newCommand(
+    title,
+    {
+      parent: {optsObj: appOptions},
+      description,
+      idescription = description,
+      parentIssue,
+      tracker: trackerName,
+      status: statusName,
+      release: releaseName,
+      user: userName,
+      me,
+    },
+  ) {
+    description = idescription
+    // .action((title, {parent: {safeOpts: appOptions}, safeOpts: {description, parent, status, user, me}}) => {
+    if (typeof description !== 'string') description = undefined
+    const surl = serverUrl(config, appOptions)
+    const url = projectUrl(config, appOptions)
+    if (me !== undefined) {
+      userName = whois(config)
+    }
+    userName = expandMe(config, userName)
+
+    const project = await get(`${url}.json`)
+    const tracker = await getTracker(surl, trackerName)
+    const status = await getStatus(surl, statusName)
+
+    if (description === true) {
+      description = await openInEditor(
+        config,
+        'Enter the issue description',
+        '',
+      )
+    }
+
+    if (
+      parentIssue === true ||
+      (parentIssue === undefined && config.requireParent)
+    ) {
+      parentIssue = await selectParentIssue(url)
+    }
+
+    const body: IssueBody = {
+      project_id: project.project.id,
+      tracker_id: tracker.id,
+      status_id: status.id,
+      subject: title,
+      description,
+      parent_issue_id: parentIssue,
+    }
+
+    if (releaseName !== undefined) {
+      const release = await getRelease(url, releaseName)
+      body.fixed_version_id = release.id
+    }
+
+    if (userName !== undefined) {
+      const user = await getUser(url, userName)
+      body.assigned_to_id = user.id
+    }
+
+    debug('new body', body)
+
+    const response = await fetch(`${url}/issues.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({issue: body}),
+    })
+
+    if (response.status === 201) {
+      const body = await response.json()
+      const id = body.issue.id
+      const url = `${webUrl(config, appOptions)}/issues/${id}`
+      console.log(`Created issue #${id} ${url}`)
+    } else {
+      debug('response status', response.status)
+      debug('response text', await response.text())
+    }
+  }
+
+  async function takeCommand(
+    issueId,
+    userName = 'me',
+    {parent: {optsObj: appOptions}, status: statusName, skipStatus, show},
+  ) {
+    const surl = serverUrl(config, appOptions)
+    const url = projectUrl(config, appOptions)
+    userName = expandMe(config, userName)
+
+    const user = await getUser(url, userName)
+
+    const body: Partial<IssueBody> = {assigned_to_id: user.id}
+
+    if (!skipStatus) {
+      const status = await getStatus(surl, statusName)
+      body.status_id = status.id
+    }
+
+    debug('body', body)
+    debug('put', `${surl}/issues/${issueId}.json`)
+
+    const response = await fetch(`${surl}/issues/${issueId}.json`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({issue: body}),
+    })
+
+    debug('response status', response.status)
+    debug('response text', await response.text())
+
+    if (show) {
+      await showCommand(issueId, {parent: {optsObj: appOptions}})
+    }
+  }
+
+  async function finishCommand(
+    issue,
+    {parent: {optsObj: appOptions}, status: statusName, user: userName, me},
+  ) {
+    const surl = serverUrl(config, appOptions)
+    const url = projectUrl(config, appOptions)
+    if (me !== undefined) {
+      userName = whois(config)
+    }
+    userName = expandMe(config, userName)
+
+    const status = await getStatus(surl, statusName)
+
+    const body: Partial<IssueBody> = {status_id: status.id}
+
+    if (userName !== undefined) {
+      const user = await getUser(url, userName)
+      body.assigned_to_id = user.id
+    }
+
+    debug('body', body)
+    debug('put', `${surl}/issues/${issue}.json`)
+
+    const response = await fetch(`${surl}/issues/${issue}.json`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({issue: body}),
+    })
+
+    debug('response status', response.status)
+    debug('response text', await response.text())
+  }
+
+  async function editCommand(
+    issue,
+    {
+      parent: {optsObj: appOptions},
+      title,
+      description,
+      idescription = description,
+      parentIssue,
+      tracker: trackerName,
+      status: statusName,
+      release: releaseName,
+      user: userName,
+      me,
+    },
+  ) {
+    description = idescription
+    if (typeof description === 'function') description = undefined
+    const surl = serverUrl(config, appOptions)
+    const url = projectUrl(config, appOptions)
+    if (me !== undefined) {
+      userName = whois(config)
+    }
+    userName = expandMe(config, userName)
+
+    if (description === true) {
+      const {issue: oldIssue} = await get<{issue: Issue}>(
+        `${surl}/issues/${issue}.json`,
+      )
+      description = await openInEditor(
+        config,
+        'Enter the issue description',
+        `; ${oldIssue.tracker.name} #${oldIssue.id}
 ; ${oldIssue.subject}
 ;
 ${oldIssue.description}`,
-          )
-        }
+      )
+    }
 
-        if (parentIssue === true) {
-          parentIssue = await selectParentIssue(url)
-        }
+    if (parentIssue === true) {
+      parentIssue = await selectParentIssue(url)
+    }
 
-        const body: Partial<IssueBody> = {
-          subject: title,
-          description,
-          parent_issue_id: parentIssue,
-        }
+    const body: Partial<IssueBody> = {
+      subject: title,
+      description,
+      parent_issue_id: parentIssue,
+    }
 
-        if (trackerName !== undefined) {
-          const tracker = await getTracker(surl, trackerName)
-          body.tracker_id = tracker.id
-        }
+    if (trackerName !== undefined) {
+      const tracker = await getTracker(surl, trackerName)
+      body.tracker_id = tracker.id
+    }
 
-        if (statusName !== undefined) {
-          const status = await getStatus(surl, statusName)
-          body.status_id = status.id
-        }
+    if (statusName !== undefined) {
+      const status = await getStatus(surl, statusName)
+      body.status_id = status.id
+    }
 
-        if (releaseName !== undefined) {
-          const release = await getRelease(url, releaseName)
-          body.fixed_version_id = release.id
-        }
+    if (releaseName !== undefined) {
+      const release = await getRelease(url, releaseName)
+      body.fixed_version_id = release.id
+    }
 
-        if (userName !== undefined) {
-          const user = await getUser(url, userName)
-          body.assigned_to_id = user.id
-        }
+    if (userName !== undefined) {
+      const user = await getUser(url, userName)
+      body.assigned_to_id = user.id
+    }
 
-        debug('body', body)
-        debug('put', `${surl}/issues/${issue}.json`)
+    debug('body', body)
+    debug('put', `${surl}/issues/${issue}.json`)
 
-        const response = await fetch(`${surl}/issues/${issue}.json`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({issue: body}),
-        })
-
-        debug('response status', response.status)
-        debug('response text', await response.text())
+    const response = await fetch(`${surl}/issues/${issue}.json`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
       },
-    )
+      body: JSON.stringify({issue: body}),
+    })
 
-  program.parse(process.argv)
+    debug('response status', response.status)
+    debug('response text', await response.text())
+  }
 }
 
 main()

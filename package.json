@@ -1,6 +1,8 @@
 {
   "name": "redmine-command",
   "version": "0.1.0",
+  "description": "A simple Redmine CLI",
+  "repository": "Pajn/redmine",
   "bin": {
     "redmine": "./build/index.js"
   },
