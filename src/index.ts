@@ -102,11 +102,15 @@ export function compare(
 
 function loadConfig() {
   const config: Config = {}
-
   try {
     const file = yaml.safeLoad(
       fs.readFileSync(
-        join(process.env.HOME!, 'Library/Preferences/redmine.yaml'),
+        process.env.XDG_CONFIG_HOME ||
+          join(
+            process.env.HOME!,
+            process.platform === 'darwin' ? 'Library/Preferences' : '.config',
+            'redmine.yaml',
+          ),
         'utf8',
       ),
     )
